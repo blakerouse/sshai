@@ -49,4 +49,4 @@ Ask the following question to Claude and watch it work. Be sure the connection i
 includes username, password and that the machine is an Ubuntu machine that allows SSH over
 password (by default most do not).
 
-`SSH into ssh://<USER>:<PASS>@<IP> and see if it is up to date
+`SSH into ssh://<USER>:<PASS>@<IP> and see if it is up to date`
