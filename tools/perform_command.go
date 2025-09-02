@@ -14,28 +14,27 @@ import (
 
 func init() {
 	// register the tool in the registry
-	Registry.Register(&PerformUpdates{})
+	Registry.Register(&PerformCommand{})
 }
 
-// PerformUpdates is a tool that updates the packages on a remote machine.
-//
-// At the moment this is limited to Ubuntu.
-type PerformUpdates struct{}
+// PerformCommand is a tool that executes a command on a remote machine.
+type PerformCommand struct{}
 
 // Definition returns the mcp.Tool definition.
-func (c *PerformUpdates) Definition() mcp.Tool {
-	return mcp.NewTool("perform_updates",
-		mcp.WithDescription("SSH into a remote machine and updates the operating system packages."),
+func (c *PerformCommand) Definition() mcp.Tool {
+	return mcp.NewTool("perform_command",
+		mcp.WithDescription("SSH into a remote machine and executes a command."),
 		mcp.WithArray("name_of_hosts",
 			mcp.Required(),
 			mcp.Description("Name of the hosts"),
 			mcp.WithStringItems(),
 		),
+		mcp.WithString("command", mcp.Required(), mcp.Description("The command to execute")),
 	)
 }
 
 // Handle is the function that is called when the tool is invoked.
-func (c *PerformUpdates) Handler(storageEngine *storage.Engine, aiClient openai.Client) server.ToolHandlerFunc {
+func (c *PerformCommand) Handler(storageEngine *storage.Engine, aiClient openai.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		sshNameOfHosts, err := request.RequireStringSlice("name_of_hosts")
 		if err != nil {
@@ -43,6 +42,10 @@ func (c *PerformUpdates) Handler(storageEngine *storage.Engine, aiClient openai.
 		}
 		if len(sshNameOfHosts) == 0 {
 			return mcp.NewToolResultError("no hosts provided"), nil
+		}
+		commandStr, err := request.RequireString("command")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		found, err := getHostsFromStorage(storageEngine, sshNameOfHosts)
@@ -53,25 +56,12 @@ func (c *PerformUpdates) Handler(storageEngine *storage.Engine, aiClient openai.
 			return mcp.NewToolResultError("no matching hosts found"), nil
 		}
 
-		// too make this smarter we should now check what type of machine this is
-		// is it a linux machine? running ubuntu, debian, centos, etc.
-		// is it a windows machine? running powershell, etc.
-
-		// for now we just assume Ubuntu
-
-		result := performTasksOnHosts(found, func(sshClient *ssh.Client) (string, error) {
+		result := performTasksOnHosts(found, func(_ ssh.ClientInfo, sshClient *ssh.Client) (string, error) {
 			// sudo is required to update and upgrade
-			_, err = sshClient.Exec("sudo apt-get update")
+			output, err := sshClient.Exec(commandStr)
 			if err != nil {
-				return "", fmt.Errorf("failed to update packages: %w", err)
+				return "", fmt.Errorf("failed to execute command: %w", err)
 			}
-
-			// get the upgrade information from the host
-			output, err := sshClient.Exec("sudo apt-get upgrade -y")
-			if err != nil {
-				return "", fmt.Errorf("failed to upgrade packages: %w", err)
-			}
-
 			return string(output), nil
 		})
 

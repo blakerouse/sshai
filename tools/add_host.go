@@ -62,14 +62,17 @@ func (c *AddHost) Handler(storageEngine *storage.Engine, aiClient openai.Client)
 		// from this point forward it is very much assuming linux
 		// this really should be improved to do more checks to see if this macOS or Windows
 
-		// gather the /etc/os-release information to determine the OS type
 		osRelease, err := sshClient.Exec("cat /etc/os-release")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Errorf("failed to get output of /etc/os-release: %w", err).Error()), nil
 		}
+		uname, err := sshClient.Exec("uname -a")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Errorf("failed to get output of uname -a: %w", err).Error()), nil
+		}
 
 		// send the output to OpenAI to get a summary of what needs to be updated
-		osInfo, err := getOSInfo(ctx, aiClient, osRelease)
+		osInfo, err := getOSInfo(ctx, aiClient, string(osRelease), string(uname))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Errorf("failed to summarize OS information: %w", err).Error()), nil
 		}
@@ -85,7 +88,7 @@ func (c *AddHost) Handler(storageEngine *storage.Engine, aiClient openai.Client)
 	}
 }
 
-func getOSInfo(ctx context.Context, aiClient openai.Client, output []byte) (*ssh.OSInfo, error) {
+func getOSInfo(ctx context.Context, aiClient openai.Client, osRelease string, uname string) (*ssh.OSInfo, error) {
 	// setup the schema to ensure the output is structured
 	schema := utils.GenerateSchema[ssh.OSInfo]()
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
@@ -98,8 +101,11 @@ func getOSInfo(ctx context.Context, aiClient openai.Client, output []byte) (*ssh
 	// perform the chat to compute the output into the desired format
 	chat, err := aiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are a helpful assistant that summarizes the output of the 'cat /etc/os-release' command."),
-			openai.UserMessage(string(output)),
+			openai.SystemMessage(`
+			You are a helpful assistant that summarizes the contents of '/etc/os-release' and
+			the 'uname -a' command. Use this information to determine the name, platform,
+			architecture, and version of the operating system.`),
+			openai.UserMessage(fmt.Sprintf("--- /etc/os-release ---\n%s\n--- uname -a ---\n%s", osRelease, uname)),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{

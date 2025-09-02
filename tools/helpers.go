@@ -35,7 +35,7 @@ type taskResult struct {
 }
 
 // performTasksOnHosts performs the task on all hosts in parallel
-func performTasksOnHosts(hosts []ssh.ClientInfo, task func(sshClient *ssh.Client) (string, error)) map[string]taskResult {
+func performTasksOnHosts(hosts []ssh.ClientInfo, task func(host ssh.ClientInfo, sshClient *ssh.Client) (string, error)) map[string]taskResult {
 	var wg sync.WaitGroup
 	wg.Add(len(hosts))
 
@@ -55,7 +55,7 @@ func performTasksOnHosts(hosts []ssh.ClientInfo, task func(sshClient *ssh.Client
 			}
 			defer sshClient.Close()
 
-			result, err := task(sshClient)
+			result, err := task(host, sshClient)
 			resultsMx.Lock()
 			results[host.Name] = taskResult{Host: host.Name, Result: result, Err: err}
 			resultsMx.Unlock()
