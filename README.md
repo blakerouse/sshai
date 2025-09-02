@@ -1,15 +1,23 @@
 # SSH AI
-SSH AI is an MCP server that runs locally on your host that provides the ability to SSH into host
-and perform actions.
+SSH AI is an MCP server that runs locally on your host that provides the ability to add and remove
+hosts that you can SSH into and perform commands.
 
 ## Tools
 
-- Check for Updates
-  - Checks if any updates are available on the host.
+- Add host
+  - Adds a host
+- Remove host
+  - Removes a host
+- Get OS Info
+  - Shows the OS information of the hosts
+- Update OS Info
+  - Updates the cached OS information of the hosts
+- Perform Command
+  - Performs the command on the provided hosts
 
 ## Limitations
 
-- Only supports Ubuntu with APT
+- Only supports Linux
 - Only supports username/password SSH
 - Ignores host keys
 
@@ -45,8 +53,27 @@ Restart Claude Desktop
 
 ## How to Use
 
-Ask the following question to Claude and watch it work. Be sure the connection information
-includes username, password and that the machine is an Ubuntu machine that allows SSH over
-password (by default most do not).
+First add a host that you want to be able to interact with:
 
-`SSH into ssh://<USER>:<PASS>@<IP> and see if it is up to date`
+`add host with name <name> connecting with ssh://<USER>:<PASS>@<IP>`
+
+You can then list the hosts available with:
+
+`list my hosts`
+
+You can add another host with same command again (multiple hosts will perform the same
+command on the provided hosts):
+
+`add host with name <name> connecting with ssh://<USER>:<PASS>@<IP>`
+
+Ask for the OS information for all added hosts:
+
+`show OS information for all hosts`
+
+Ask for it to check if any of the hosts need to be updated:
+
+`do any of my hosts need to be updated`
+
+Ask it to upgrade a specific host (or all, it will do it at the same time):
+
+`upgrade host <name>`
