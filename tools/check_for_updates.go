@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -10,6 +9,7 @@ import (
 	"github.com/openai/openai-go/v2"
 
 	"github.com/blakerouse/sshai/ssh"
+	"github.com/blakerouse/sshai/storage"
 )
 
 func init() {
@@ -25,32 +25,33 @@ type CheckForUpdates struct{}
 // Definition returns the mcp.Tool definition.
 func (c *CheckForUpdates) Definition() mcp.Tool {
 	return mcp.NewTool("check_for_updates",
-		mcp.WithDescription("SSH into a remote machine and checks if the operating system is up to date. If it has any updates, it will return the list of packages that can be upgraded."),
-		mcp.WithString("ssh_connection_string",
+		mcp.WithDescription("SSH into a remote machines and checks if the operating system is up to date. If it has any updates, it will return the list of packages that can be upgraded."),
+		mcp.WithArray("name_of_hosts",
 			mcp.Required(),
-			mcp.Description("SSH connection string"),
+			mcp.Description("Name of the hosts"),
+			mcp.WithStringItems(),
 		),
 	)
 }
 
 // Handle is the function that is called when the tool is invoked.
-func (c *CheckForUpdates) Handler(aiClient openai.Client) server.ToolHandlerFunc {
+func (c *CheckForUpdates) Handler(storageEngine *storage.Engine, aiClient openai.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sshConnectionString, err := request.RequireString("ssh_connection_string")
+		sshNameOfHosts, err := request.RequireStringSlice("name_of_hosts")
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		sshClient, err := ssh.NewClientFromString(sshConnectionString)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+		if len(sshNameOfHosts) == 0 {
+			return mcp.NewToolResultError("no hosts provided"), nil
 		}
 
-		// connect over ssh
-		err = sshClient.Connect()
+		found, err := getHostsFromStorage(storageEngine, sshNameOfHosts)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		defer sshClient.Close()
+		if len(found) == 0 {
+			return mcp.NewToolResultError("no matching hosts found"), nil
+		}
 
 		// too make this smarter we should now check what type of machine this is
 		// is it a linux machine? running ubuntu, debian, centos, etc.
@@ -58,23 +59,22 @@ func (c *CheckForUpdates) Handler(aiClient openai.Client) server.ToolHandlerFunc
 
 		// for now we just assume Ubuntu
 
-		// ensure that the repository is up to date
-		// this is allowed to fail, because the user might not have permission or sudo
-		// to perform this action (in that case we just use the repository as it is)
-		_ = updateRepo(ctx, sshClient)
+		result := performTasksOnHosts(found, func(sshClient *ssh.Client) (string, error) {
+			// ensure that the repository is up to date
+			// this is allowed to fail, because the user might not have permission or sudo
+			// to perform this action (in that case we just use the repository as it is)
+			_ = updateRepo(ctx, sshClient)
 
-		// get the upgrade information from the host
-		output, err := sshClient.Exec("apt list --upgradable")
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Errorf("failed to get upgrade information: %w", err).Error()), nil
-		}
+			// get the upgrade information from the host
+			output, err := sshClient.Exec("apt list --upgradable")
+			if err != nil {
+				return "", fmt.Errorf("failed to get upgrade information: %w", err)
+			}
 
-		// send the output to OpenAI to get a summary of what needs to be updated
-		summary, err := summarizeAptUpgradableOutput(ctx, aiClient, output)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Errorf("failed to summarize apt output: %w", err).Error()), nil
-		}
-		return mcp.NewToolResultText(summary), nil
+			return string(output), nil
+		})
+
+		return mcp.NewToolResultStructuredOnly(result), nil
 	}
 }
 
@@ -95,22 +95,4 @@ func updateRepo(ctx context.Context, client *ssh.Client) error {
 	}
 	// failed both times
 	return err
-}
-
-func summarizeAptUpgradableOutput(ctx context.Context, aiClient openai.Client, output []byte) (string, error) {
-	// send the output to OpenAI to get a summary of what needs to be updated
-	chat, err := aiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModelGPT4o,
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are a helpful assistant that summarizes the output of the 'apt list --upgradable' command."),
-			openai.UserMessage(string(output)),
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(chat.Choices) == 0 {
-		return "", errors.New("no choices returned from OpenAI")
-	}
-	return chat.Choices[0].Message.Content, nil
 }

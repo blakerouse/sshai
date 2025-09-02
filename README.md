@@ -35,7 +35,7 @@ Update the MCP configuration for Claude Desktop:
   "mcpServers": {
     "ssh": {
       "command": "<PATH_TO_BUILT_SSHAI_BINARY>",
-      "args": ["--openai", "<OPENAI_API_KEY>"]
+      "args": ["--storage", "<PATH_TO_STORE_HOSTS>", "--openai", "<OPENAI_API_KEY>"]
     }
   }
 }

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"github.com/blakerouse/sshai/storage"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/openai/openai-go/v2"
@@ -9,5 +10,5 @@ import (
 // Tool defines the interface that provides both the definition and the handler for a tool.
 type Tool interface {
 	Definition() mcp.Tool
-	Handler(openai.Client) server.ToolHandlerFunc
+	Handler(*storage.Engine, openai.Client) server.ToolHandlerFunc
 }

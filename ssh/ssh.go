@@ -11,27 +11,27 @@ import (
 // ErrNotConnected returned when the client is not connected.
 var ErrNotConnected = errors.New("not connected")
 
-// Client is an SSH client.
-type Client struct {
-	hostPort string
-	config   *ssh.ClientConfig
-
-	client *ssh.Client
+// OSInfo provides the OS information.
+type OSInfo struct {
+	Name     string `yaml:"name" json:"name" jsonschema_description:"The name of the operating system"`
+	Platform string `yaml:"platform" json:"platform" jsonschema_description:"The platform of the operating system"`
+	Version  string `yaml:"version" json:"version" jsonschema_description:"The version of the operating system"`
+	Arch     string `yaml:"arch" json:"arch" jsonschema_description:"The architecture of the operating system"`
 }
 
-// NewClient creates the client with the hostPort and configuration.
-func NewClient(hostPort string, config *ssh.ClientConfig) *Client {
-	return &Client{
-		hostPort: hostPort,
-		config:   config,
-	}
+// ClientInfo stores the generate client information.
+type ClientInfo struct {
+	Name string `yaml:"name" json:"name" jsonschema_description:"The name of the client"`
+	Host string `yaml:"host" json:"host" jsonschema_description:"The host of the client"`
+	Port string `yaml:"port" json:"port" jsonschema_description:"The port of the client"`
+	User string `yaml:"user" json:"user" jsonschema_description:"The user of the client"`
+	Pass string `yaml:"pass" json:"pass" jsonschema_description:"The password of the client"`
+
+	OS OSInfo `yaml:"os" json:"os" jsonschema_description:"The operating system information"`
 }
 
-// NewClientFromString creates a client from a connection striong.
-//
-// Currently this requires the connection string to include both the username and password
-// and it ignores the SSH host key.
-func NewClientFromString(connStr string) (*Client, error) {
+// NewClientInfo returns client information from the connection string.
+func NewClientInfo(name string, connStr string) (*ClientInfo, error) {
 	sshURL, err := url.Parse(connStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid SSH connection string: %w", err)
@@ -60,24 +60,45 @@ func NewClientFromString(connStr string) (*Client, error) {
 	if port == "" {
 		port = "22" // default SSH port
 	}
-
-	sshConfig := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			// TODO: Use SSH key instead.
-			ssh.Password(pass),
-		},
-		// TODO: This should be improved to not ignore the host keys.
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	if name == "" {
+		name = host // default name to host (if not provided)
 	}
 
-	return NewClient(fmt.Sprintf("%s:%s", host, port), sshConfig), nil
+	return &ClientInfo{
+		Name: name,
+		Host: host,
+		Port: port,
+		User: user,
+		Pass: pass,
+	}, nil
+}
+
+// Client is an SSH client.
+type Client struct {
+	info *ClientInfo
+
+	client *ssh.Client
+}
+
+// NewClient creates the client with the hostPort and configuration.
+func NewClient(info *ClientInfo) *Client {
+	return &Client{
+		info: info,
+	}
 }
 
 // Connect connects to the SSH server.
 func (c *Client) Connect() error {
 	var err error
-	c.client, err = ssh.Dial("tcp", c.hostPort, c.config)
+	host := fmt.Sprintf("%s:%s", c.info.Host, c.info.Port)
+	cfg := &ssh.ClientConfig{
+		User: c.info.User,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(c.info.Pass),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	c.client, err = ssh.Dial("tcp", host, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SSH server: %w", err)
 	}

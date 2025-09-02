@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path"
 	"syscall"
 
 	"github.com/mark3labs/mcp-go/server"
@@ -13,6 +14,7 @@ import (
 	"github.com/openai/openai-go/v2/option"
 	"github.com/spf13/cobra"
 
+	"github.com/blakerouse/sshai/storage"
 	"github.com/blakerouse/sshai/tools"
 )
 
@@ -31,6 +33,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().String("openai", "", "OpenAI API key")
+	rootCmd.PersistentFlags().String("storage", "", "Storage path for hosts")
 }
 
 func main() {
@@ -45,11 +48,24 @@ func run(cmd *cobra.Command) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	storagePath := cmd.Flag("storage").Value.String()
+	if storagePath == "" {
+		return errors.New("--storage is required")
+	}
+	err := os.MkdirAll(path.Dir(storagePath), 0700)
+	if err != nil {
+		return fmt.Errorf("failed to create storage directory: %w", err)
+	}
+	storageEngine, err := storage.NewEngine(storagePath)
+	if err != nil {
+		return fmt.Errorf("failed to create storage engine: %w", err)
+	}
+
 	apiKey := cmd.Flag("openai").Value.String()
 	if apiKey == "" {
-		return errors.New("OpenAI API key is required")
+		return errors.New("--openai is required")
 	}
-	client := openai.NewClient(
+	aiClient := openai.NewClient(
 		option.WithAPIKey(apiKey),
 	)
 
@@ -61,7 +77,7 @@ func run(cmd *cobra.Command) error {
 	)
 
 	for _, tool := range tools.Registry.Tools() {
-		s.AddTool(tool.Definition(), tool.Handler(client))
+		s.AddTool(tool.Definition(), tool.Handler(storageEngine, aiClient))
 	}
 
 	// start the stdio server
